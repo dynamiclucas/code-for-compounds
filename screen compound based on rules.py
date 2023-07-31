@@ -2,6 +2,7 @@
 from rdkit import Chem
 from rdkit.Chem import rdDepictor
 
+
 # 读取SMILES
 smiles = [line.split(',')[0] for line in open('smiles-small.csv').readlines()[1:]] 
 
