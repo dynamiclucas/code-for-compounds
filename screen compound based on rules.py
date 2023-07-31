@@ -59,7 +59,17 @@ def filter_hetero_rings(smiles_list):
 
 # 测试调用yst员工  
 smiles = [line.split(',')[0] for line in open('smiles-small.csv').readlines()[1:]]
-print(filter_hetero_rings(smiles))
+#print(filter_hetero_rings(smiles))
+import csv
+def output_csv(hetero_rings):
+    with open('hetero_rings.csv', 'w') as f:
+        writer = csv.writer(f)
+        writer.writerow(['smiles'])
+        for smi in hetero_rings:
+            writer.writerow([smi])
+hetero_rings = filter_hetero_rings(smiles)
+output_csv(hetero_rings)
+
 
 
 ##封装为class
