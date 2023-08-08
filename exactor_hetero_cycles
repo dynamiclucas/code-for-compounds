@@ -1,0 +1,36 @@
+from rdkit import Chem
+from rdkit.Chem import rdDepictor
+import pandas as pd
+
+# Load compounds 
+compounds = []
+with open('Claude测试.csv') as f:
+    for line in f:
+        if line.startswith('SMILES'):
+            continue
+        smiles = line.split(',')[0]
+        mol = Chem.MolFromSmiles(smiles)
+        compounds.append(mol)
+        
+df = pd.DataFrame(compounds)
+
+# Screen and extract cycles
+def get_hetero_cycles(mol):
+    cycles = []
+    for ring in Chem.GetSymmSSSR(mol):
+        if any(atom.GetAtomicNum() not in [1,6] for atom in ring):
+            cycle = Chem.MolFragmentToSmiles(ring, bonds=ring)
+            cycles.append(cycle)
+    return cycles
+
+df['hetero_cycles'] = df[0].apply(get_hetero_cycles)
+
+# Filter and output SMILES
+cycles = []
+for index, row in df.iterrows():
+    for cycle in row['hetero_cycles']:
+        cycles.append(cycle)
+        
+with open('heterocycles.smi','w') as f:
+    for smi in cycles:
+        f.write(smi + '\n')
