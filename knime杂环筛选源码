@@ -1,0 +1,76 @@
+from rdkit import Chem
+from rdkit.Chem import Draw
+from rdkit.Chem.Scaffolds import MurckoScaffold  
+import pandas as pd
+
+# 获取环系键索引
+def get_ring_bonds(mol):
+    ri = mol.GetRingInfo()
+    bond_rings = ri.BondRings() 
+    ring_bonds = []
+    for ring in bond_rings:
+        ring_bonds.extend(ring)
+    return ring_bonds
+
+# 获取linker键索引  
+def get_linker_bonds(mol, use_scaffold=True):
+
+    if use_scaffold:
+        mol = MurckoScaffold.GetScaffoldForMol(mol)
+    
+    for atom in mol.GetAtoms():
+        atom.SetIntProp("orig_idx", atom.GetIdx())
+    
+    for bond in mol.GetBonds():
+        bond.SetIntProp("orig_idx", bond.GetIdx())
+
+    ring_info = mol.GetRingInfo()
+    bond_rings = ring_info.BondRings()
+
+    ring_bonds = set()
+    for ring in bond_rings:
+        ring_bonds.update(ring)
+    
+    all_bonds = [bond.GetIdx() for bond in mol.GetBonds()]
+    non_ring_bonds = set(all_bonds) - ring_bonds
+
+    linker_bonds = []
+    for bond_idx in non_ring_bonds:
+        begin_idx = mol.GetBondWithIdx(bond_idx).GetBeginAtomIdx()
+        end_idx = mol.GetBondWithIdx(bond_idx).GetEndAtomIdx()
+        
+        if mol.GetBondWithIdx(bond_idx).GetBondTypeAsDouble() == 1.0:
+            if mol.GetAtomWithIdx(begin_idx).IsInRing() + mol.GetAtomWithIdx(end_idx).IsInRing() == 1:
+                orig_idx = mol.GetBondWithIdx(bond_idx).GetIntProp('orig_idx')
+                linker_bonds.append(orig_idx)
+    
+    return linker_bonds
+                
+# 主处理函数
+def process_mols(df):
+
+    smiles = df['SMILES'].tolist()
+    mols = [Chem.MolFromSmiles(smi) for smi in smiles]
+
+    rings = []
+    linkers = []
+
+    for mol in mols:
+        ring_bonds = get_ring_bonds(mol)
+        linker_bonds = get_linker_bonds(mol)
+        
+        rings.append(ring_bonds)
+        linkers.append(linker_bonds)
+
+    ring_series = pd.Series(rings)
+    linker_series = pd.Series(linkers)
+
+    df['Rings'] = ring_series
+    df['Linkers'] = linker_series
+
+    return df
+    
+# 测试    
+df = pd.DataFrame({'SMILES': ['C1CCCCC1', 'C1CCC2CCCCC2C1']})
+df = process_mols(df)
+print(df)
