@@ -1,76 +1,155 @@
-from rdkit import Chem
-from rdkit.Chem import Draw
-from rdkit.Chem.Scaffolds import MurckoScaffold  
+import copy
 import pandas as pd
+from rdkit import Chem
+from rdkit.Chem.Scaffolds import MurckoScaffold
+from rdkit.Chem import Draw
+# 读取Excel文件
+mols_df = pd.read_excel('/Users/lee/Desktop/excel/FDA-approved.xlsx')
 
-# 获取环系键索引
-def get_ring_bonds(mol):
-    ri = mol.GetRingInfo()
-    bond_rings = ri.BondRings() 
-    ring_bonds = []
-    for ring in bond_rings:
-        ring_bonds.extend(ring)
-    return ring_bonds
+# 创建一个新的 DataFrame 以保存结果
+results_df = pd.DataFrame(columns=["Original SMILES", "Fragmented SMILES"])
 
-# 获取linker键索引  
-def get_linker_bonds(mol, use_scaffold=True):
+def is_in_samering(idx1, idx2, bond_rings):
+    for bond_ring in bond_rings:
+        if idx1 in bond_ring and idx2 in bond_ring:
+            return True
+    return False
 
-    if use_scaffold:
-        mol = MurckoScaffold.GetScaffoldForMol(mol)
-    
+def getLinkerbond(mol, useScaffold=True):
+    res = []
     for atom in mol.GetAtoms():
         atom.SetIntProp("orig_idx", atom.GetIdx())
-    
     for bond in mol.GetBonds():
         bond.SetIntProp("orig_idx", bond.GetIdx())
-
+    
+    if useScaffold:
+        mol = MurckoScaffold.GetScaffoldForMol(mol)
+        
     ring_info = mol.GetRingInfo()
     bond_rings = ring_info.BondRings()
-
     ring_bonds = set()
-    for ring in bond_rings:
-        ring_bonds.update(ring)
-    
-    all_bonds = [bond.GetIdx() for bond in mol.GetBonds()]
-    non_ring_bonds = set(all_bonds) - ring_bonds
-
-    linker_bonds = []
-    for bond_idx in non_ring_bonds:
-        begin_idx = mol.GetBondWithIdx(bond_idx).GetBeginAtomIdx()
+    for ring_bond_idxs in bond_rings:
+        for idx in ring_bond_idxs:
+            ring_bonds.add(idx)
+    all_bonds_idx = [bond.GetIdx() for bond in mol.GetBonds()]
+    none_ring_bonds = set(all_bonds_idx) - ring_bonds
+    for bond_idx in none_ring_bonds:
+        bgn_idx = mol.GetBondWithIdx(bond_idx).GetBeginAtomIdx()
         end_idx = mol.GetBondWithIdx(bond_idx).GetEndAtomIdx()
-        
         if mol.GetBondWithIdx(bond_idx).GetBondTypeAsDouble() == 1.0:
-            if mol.GetAtomWithIdx(begin_idx).IsInRing() + mol.GetAtomWithIdx(end_idx).IsInRing() == 1:
-                orig_idx = mol.GetBondWithIdx(bond_idx).GetIntProp('orig_idx')
-                linker_bonds.append(orig_idx)
+            if mol.GetAtomWithIdx(bgn_idx).IsInRing()+mol.GetAtomWithIdx(end_idx).IsInRing() == 1:
+                bond = mol.GetBondWithIdx(bond_idx)
+                orig_idx = bond.GetIntProp("orig_idx")
+                res.append(orig_idx)
+            elif not is_in_samering(bgn_idx, end_idx, bond_rings) and mol.GetAtomWithIdx(bgn_idx).IsInRing()+mol.GetAtomWithIdx(end_idx).IsInRing() == 2:
+                bond = mol.GetBondWithIdx(bond_idx)
+                orig_idx = bond.GetIntProp("orig_idx")
+                res.append(orig_idx)
+    return res
+
+
+
+def process_fragments_retain_cycles_remove_branches(fragmented_smiles):
+    # 将碎片分割成单独的分子
+    fragments = [Chem.MolFromSmiles(frag) for frag in fragmented_smiles.split('.')]
+    processed_frags = []
     
-    return linker_bonds
-                
-# 主处理函数
-def process_mols(df):
+    for fragment in fragments:
+        if fragment and fragment.GetRingInfo().NumRings() > 0:  # 如果该碎片包含环
+            rw_mol = Chem.RWMol(fragment)  # 创建一个可编辑的分子结构
+            atoms_to_remove = []
 
-    smiles = df['SMILES'].tolist()
-    mols = [Chem.MolFromSmiles(smi) for smi in smiles]
+            for atom in fragment.GetAtoms():
+                if atom.IsInRing():
+                    # 查找与这些原子以单键连接并且不在环上的原子
+                    for neighbor in atom.GetNeighbors():
+                        bond = fragment.GetBondBetweenAtoms(atom.GetIdx(), neighbor.GetIdx())
+                        if not neighbor.IsInRing() and bond.GetBondType() == Chem.BondType.SINGLE:
+                            atoms_to_remove.append(neighbor.GetIdx())
+            
+            # 去除与环上原子以单键连接的支链或支原子
+            for idx in sorted(atoms_to_remove, reverse=True):  # 从后往前移除，以避免索引更改的问题
+                rw_mol.RemoveAtom(idx)
+            
+            processed_frags.append(Chem.MolToSmiles(rw_mol))
+    
+    # 将经过处理的碎片合并回 SMILES 字符串
+    return '.'.join(processed_frags).replace("[#0]", "R")  # 替换原子映射编号为R
 
-    rings = []
-    linkers = []
 
-    for mol in mols:
-        ring_bonds = get_ring_bonds(mol)
-        linker_bonds = get_linker_bonds(mol)
+results_df_cycles_remove_branches = pd.DataFrame(columns=["Original SMILES", "Fragmented SMILES"])
+
+def process_fragments_simple_cycles(fragmented_smiles):
+    # 将碎片分割成单独的分子
+    fragments = [Chem.MolFromSmiles(frag) for frag in fragmented_smiles.split('.')]
+    processed_frags = []
+    
+    for fragment in fragments:
+        if fragment and fragment.GetRingInfo().NumRings() > 0:  # 如果该碎片包含环
+            rw_mol = Chem.RWMol(fragment)  # 创建一个可编辑的分子结构
+
+            # 递归地移除与环上原子连接的所有支链或支原子
+            def remove_branches(atom):
+                neighbors_to_remove = []
+                for neighbor in atom.GetNeighbors():
+                    bond = fragment.GetBondBetweenAtoms(atom.GetIdx(), neighbor.GetIdx())
+                    if not neighbor.IsInRing() and bond.GetBondType() == Chem.BondType.SINGLE:
+                        neighbors_to_remove.append(neighbor)
+                for neighbor in neighbors_to_remove:
+                    remove_branches(neighbor)  # 递归调用
+                    rw_mol.RemoveAtom(neighbor.GetIdx())
+
+            for atom in fragment.GetAtoms():
+                if atom.IsInRing():
+                    remove_branches(atom)
+
+            processed_frags.append(Chem.MolToSmiles(rw_mol))
+    
+    # 将经过处理的碎片合并回 SMILES 字符串
+    return '.'.join(processed_frags)
+
+# 遍历每个分子，获取并处理链接键
+for idx, row in mols_df.iterrows():
+    smiles = row['SMILES']
+    
+    # 检查SMILES是否是字符串
+    if isinstance(smiles, str):
+        mol = Chem.MolFromSmiles(smiles)
         
-        rings.append(ring_bonds)
-        linkers.append(linker_bonds)
+        # 检查mol是否有效
+        if mol:
+            bonds = getLinkerbond(mol)
+            if bonds:
+                res = Chem.FragmentOnBonds(mol, bonds)
+                # 再次检查res分子是否有效
+                if res:
+                    fragmented_smiles = Chem.MolToSmiles(res)
+                    processed_smiles = process_fragments_retain_cycles_remove_branches(fragmented_smiles)
+                else:
+                    processed_smiles = smiles  # 如果res无效，使用原始的SMILES
+            else:
+                processed_smiles = smiles  # 如果没有分段，则使用原始的SMILES
 
-    ring_series = pd.Series(rings)
-    linker_series = pd.Series(linkers)
+            results_df_cycles_remove_branches.loc[idx, "Original SMILES"] = smiles
+            results_df_cycles_remove_branches.loc[idx, "Fragmented SMILES"] = processed_smiles
 
-    df['Rings'] = ring_series
-    df['Linkers'] = linker_series
+# 创建一个set来存储去重后的环状SMILES碎片
+filtered_unique_ring_smiles = set()
 
-    return df
-    
-# 测试    
-df = pd.DataFrame({'SMILES': ['C1CCCCC1', 'C1CCC2CCCCC2C1']})
-df = process_mols(df)
-print(df)
+# 遍历之前得到的结果，筛选并保留符合环状SMILES格式的数据且环的数量在1到3之间
+for idx, row in results_df_cycles_remove_branches.iterrows():
+    fragmented_smiles = row['Fragmented SMILES']
+    # 使用split('.')方法将得到的SMILES碎片字符串分割为一个个单独的碎片
+    for smiles_fragment in fragmented_smiles.split('.'):
+        mol_fragment = Chem.MolFromSmiles(smiles_fragment)
+        num_rings = mol_fragment.GetRingInfo().NumRings() if mol_fragment else 0
+        if 1 <= num_rings <= 3:  # 确保环的数量在1到3之间
+            filtered_unique_ring_smiles.add(smiles_fragment)
+
+# 将去重后且满足环数量条件的环状SMILES碎片保存到一个新的DataFrame中
+filtered_unique_ring_smiles_df = pd.DataFrame(list(filtered_unique_ring_smiles), columns=["Filtered Unique Ring SMILES"])
+
+# 将结果保存到Excel文件中
+filtered_unique_ring_smiles_df.to_excel('/Users/lee/Desktop/excel/Filtered_Unique_Ring_SMILES.xlsx', index=False)
+
+
