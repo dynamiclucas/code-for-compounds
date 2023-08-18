@@ -1,0 +1,47 @@
+import pandas as pd
+
+# Assuming input_table is the DataFrame passed from KNIME
+input_data = input_table.copy()
+
+def horizontal_expansion(df):
+    """Expand compressed columns horizontally based on '||' delimiter."""
+    expanded_dfs = []
+
+    for _, row in df.iterrows():
+        expanded_row = {}
+
+        for col in df.columns:
+            values = str(row[col]).split("||")
+            for idx, value in enumerate(values, 1):
+                expanded_row[f"{col}_{idx}"] = value
+        
+        expanded_dfs.append(pd.DataFrame([expanded_row]))
+
+    final_df = pd.concat(expanded_dfs, ignore_index=True).fillna('')
+    return final_df
+
+expanded_data = horizontal_expansion(input_data)
+
+def reorder_columns(df, original_columns):
+    """Reorder the columns based on the original order of columns in the input dataframe."""
+    new_columns = []
+    
+    max_suffix = max([int(col.split('_')[-1]) for col in df.columns if '_' in col])
+    
+    for idx in range(1, max_suffix + 1):
+        for original_col in original_columns:
+            new_col = f"{original_col}_{idx}"
+            if new_col in df.columns:
+                new_columns.append(new_col)
+    
+    for col in original_columns:
+        if col not in new_columns and col in df.columns:
+            new_columns.append(col)
+    
+    reordered_df = df[new_columns]
+    return reordered_df
+
+reordered_data = reorder_columns(expanded_data, input_data.columns.tolist())
+
+# Set the output_table for KNIME
+output_table = reordered_data
