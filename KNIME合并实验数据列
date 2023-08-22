@@ -1,0 +1,48 @@
+def knime_transform_sheet1_to_sheet2(input_table_1):
+    # Splitting the "Concentration  μM" column
+    concentrations = input_table_1["Concentration  μM"].str.split("||", expand=True)
+    
+    # Creating the transformed dataframe
+    transformed_data = []
+    for index, row in input_table_1.iterrows():
+        compound = row["Compound"]
+        data = {"Compound": compound}
+        for column in ["A", "B", "C"]:
+            values = row[column].split("||")
+            for idx, value in enumerate(values):
+                col_name = (column, f"Concentration {concentrations.iloc[index, idx]}")
+                data[col_name] = float(value)
+        transformed_data.append(data)
+    
+    # Converting the list of dictionaries to a DataFrame
+    output_table_1 = pd.DataFrame(transformed_data)
+    
+    return output_table_1
+
+# Test
+knime_transformed_sheet2 = knime_transform_sheet1_to_sheet2(sheet1)
+knime_transformed_sheet2
+
+
+def knime_transform_sheet3_to_sheet4(input_table_1):
+    transformed_data = []
+    for index, row in input_table_1.iterrows():
+        compound = row["Compound"]
+        data = {"Compound": compound}
+        concentrations = [row["Concentration  μM_1"], row["Concentration  μM_2"]]
+        data["Concentration  μM"] = "||".join(map(str, concentrations))
+        for column in ["A", "B", "C"]:
+            values = [row[f"{column}_1"], row[f"{column}_2"]]
+            data[column] = "||".join(map(str, values))
+        transformed_data.append(data)
+    
+    # Converting the list of dictionaries to a DataFrame
+    output_table_1 = pd.DataFrame(transformed_data)
+    
+    return output_table_1
+
+# Test
+knime_transformed_sheet4 = knime_transform_sheet3_to_sheet4(sheet3)
+knime_transformed_sheet4
+
+
