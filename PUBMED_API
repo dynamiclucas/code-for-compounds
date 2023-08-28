@@ -1,0 +1,56 @@
+import requests
+import pandas as pd
+from xml.etree import ElementTree as ET
+
+# 输入的PMID列表
+pmids = input_table_1["unnamed"].tolist()
+
+base_url_fetch = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=pubmed&id={pmid}&retmode=xml&rettype=abstract"
+
+# 初始化输出列表
+output_data = []
+
+for pmid in pmids:
+    try:
+        response_fetch = requests.get(base_url_fetch.format(pmid=pmid))
+        root = ET.fromstring(response_fetch.content)
+
+        # 获取标题
+        title = root.find(".//ArticleTitle")
+        title = title.text if title is not None else ""
+
+        # 获取DOI
+        doi_el = root.find(".//ELocationID[@EIdType='doi']")
+        doi = doi_el.text if doi_el is not None else ""
+
+        # 获取摘要
+        abstract = root.find(".//AbstractText")
+        abstract = abstract.text if abstract is not None else ""
+
+        # 获取关键词
+        keywords = root.findall(".//Keyword")
+        keywords = ", ".join([kw.text for kw in keywords]) if keywords else ""
+
+        # 获取发布时间
+        year = root.find(".//PubDate/Year")
+        month = root.find(".//PubDate/Month")
+        day = root.find(".//PubDate/Day")
+        pubdate = f"{year.text if year is not None else ''}-{month.text if month is not None else ''}-{day.text if day is not None else ''}"
+
+        # 获取期刊名字
+        journal = root.find(".//Journal/Title")
+        journal = journal.text if journal is not None else ""
+
+        # 获取文章类型
+        article_type = root.find(".//PublicationType")
+        article_type = article_type.text if article_type is not None else ""
+
+        output_data.append([pmid, title, doi, keywords, abstract, pubdate, journal, article_type])
+        
+    except Exception as e:
+        print(f"Error for PMID {pmid}: {e}")
+        output_data.append([pmid, "", "", "", "", "", "", ""])
+
+
+# 转换为 DataFrame 并输出
+output_table_1 = pd.DataFrame(output_data, columns=["PMID", "Title", "DOI", "Keywords", "Abstract", "PubDate", "Journal", "ArticleType"])
