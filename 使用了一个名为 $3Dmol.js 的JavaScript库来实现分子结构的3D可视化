@@ -1,0 +1,206 @@
+$${Sbody}$$
+
+
+// ============ Actual custom code ============
+var body = document.getElementsByTagName('body')[0];
+var style = "stick";
+var index = 0;
+var viewer;
+var subscribe = true;
+var hetstyle = "stick";
+var het = false
+const CONFIG = { backgroundColor: 'black' };
+const column_types = ["PDB","SDF","Molfile"];
+const carbonColors = ["lightGreyCarbon", "yellowCarbon", "greenCarbon", "redCarbon", "purpleCarbon"];
+
+
+function update(idx, col){
+	viewer.clear();
+	if (!subscribe){
+		index = idx;
+		if (index < 0) index = knimeDataTable.getNumRows() + index;
+		else if (index >= knimeDataTable.getNumRows()) index = index % knimeDataTable.getNumRows();
+		$("#page").text(`${index + 1}/${knimeDataTable.getNumRows()}`);
+		var mf = knimeDataTable.getRows()[index].data[col];
+  		viewer.addModel(mf, "mol", {onemol: true} );
+  		if (het) {
+  			viewer.setStyle({}, {[style]:{color:"spectrum"}});
+  			viewer.setStyle({hetflag: true}, {[hetstyle]:{}});
+  		}
+  		else {
+  			viewer.setStyle({}, {[style]:{color:"spectrum"}});
+  		}
+	} else {
+		let selected = {};
+		for (let rowid of knimeService.getAllRowsForSelection(knimeDataTable.getTableId())) {
+			selected[rowid] = true;
+		}
+		let count = 0;
+		for (let row of knimeDataTable.getRows()) {
+			if (selected[row.rowKey]) {
+				var mf = row.data[col];
+  				viewer.addModel(mf, "mol", {onemol: true} );
+  				if (style === "cartoon") {
+  					if (het) {
+  						viewer.setStyle({}, {[style]:{color:"spectrum"}});
+  						viewer.setStyle({hetflag: true}, {[hetstyle]:{}});
+  					}
+  					else {
+  						viewer.setStyle({}, {[style]: {color: "spectrum"}});
+  					}
+  				} else {
+  					if (het) {
+  						viewer.setStyle({}, {[style]:{color:"spectrum"}});
+  						viewer.setStyle({hetflag: true}, {[hetstyle]:{}});
+  					}
+  					else {
+  						viewer.setStyle({}, {[style]: {colorscheme: carbonColors[(count++ % carbonColors.length)]}});
+  					}
+  				}
+			}
+		}
+	}
+  	viewer.render();
+}
+
+if (knimeService) {
+	knimeService.subscribeToSelection(knimeDataTable.getTableId(), (sel) => {
+		if (!subscribe) return;
+		if (sel.selectionMethod === "selection") {
+			if (typeof col !== "undefined") {
+				update(0, col);
+			}
+			else update(0, column_ids[column_ids.findIndex(e => e !== -1)]);
+			viewer.zoomTo();
+		}
+	});
+}
+
+
+if (knimeDataTable) {
+	var column_ids = column_types.map(function(item) {return knimeDataTable.getKnimeColumnTypes().indexOf(item)})
+		
+	if (!column_ids.every(e => e === -1)) {
+		var column_name = knimeDataTable.getColumnNames()
+			.map((cn, i) => `<option value="${i}" >${cn}</option>`)
+			.filter((_, i) => column_ids.includes(i))
+			.join("\n");
+		
+		
+	    body.innerHTML = `
+	    		<div id="menu">
+				<label for="colSelect">Column: <select id="colSelect">${column_name}</select></label>
+				<label for="styleSelect">Style:
+					<select id="styleSelect">
+						<option value="stick">Stick</option>
+						<option value="line">Line</option>
+						<option value="cross">Cross</option>
+						<option value="sphere">Sphere</option>
+						<option value="cartoon">Cartoon (only PDB)</option>
+					</select>
+				</label>
+				<span class="right">
+					<label> Show Heteroatoms? <input id="heteroSelect" type="checkbox"></select></label>
+				
+				<label for="HetstyleSelect">Heteroatoms Style:
+					<select id="HetstyleSelect" disabled>
+						<option value="stick">Stick</option>
+						<option value="line">Line</option>
+						<option value="cross">Cross</option>
+						<option value="sphere">Sphere</option>
+					</select>
+				</label>
+				</span>
+			</div>
+	    		<div id="glviewer" class="mol-container" ></div>
+			<div class="controls">
+				<button id="prevBtn">Previous</button>
+				<span id="page"></span>
+				<button id="nextBtn">Next</button>
+				<span class="right">
+					<label><input id="subscribeCheck" type="checkbox" checked/>Subscribe to selection</label>
+				</span>
+			</div>
+		`;
+	
+		$(function () {
+			let element = $('#glviewer');
+		  	viewer = $3Dmol.createViewer(element, CONFIG);
+	  		viewer.setStyle({}, {[style]:{}});
+			update(0, column_ids[0]);
+			viewer.zoomTo();
+	
+			$("#subscribeCheck").change(function() {
+		  		subscribe = document.getElementById("subscribeCheck").checked;
+		  		const c = document.getElementById("colSelect");
+		  		col = parseInt(c.options[c.selectedIndex].value);
+		  		if (subscribe) {
+		  			$("#page").text("");
+	
+		  		} else {
+		  			const e = document.getElementById("styleSelect");
+		  			style = e.options[e.selectedIndex].value;
+		  			update(index, col);
+		  			viewer.zoomTo();
+		  		}
+		  		$("#nextBtn").prop("disabled", subscribe);
+		  		$("#prevBtn").prop("disabled", subscribe);
+		  	});
+		  
+			$("#colSelect").change(function() {
+		  		const c = document.getElementById("colSelect");
+		  		col = parseInt(c.options[c.selectedIndex].value);
+		  		const e = document.getElementById("styleSelect");
+		  		style = e.options[e.selectedIndex].value;
+		  		update(index, col);
+		  		viewer.zoomTo();
+		  	});
+	
+		  	$("#nextBtn").click(function() {
+		  		const c = document.getElementById("colSelect");
+		  		col = parseInt(c.options[c.selectedIndex].value);
+		  		update(index + 1, col);
+		  		viewer.zoomTo();
+		  	});
+		  	$("#prevBtn").click(function() {
+		  		const c = document.getElementById("colSelect");
+		  		col = parseInt(c.options[c.selectedIndex].value);
+		  		update(index - 1, col);
+		  		viewer.zoomTo();
+		  	});
+	
+			$("#styleSelect").change(function() {
+		  		const c = document.getElementById("colSelect");
+		  		col = parseInt(c.options[c.selectedIndex].value);
+		  		const e = document.getElementById("styleSelect");
+		  		style = e.options[e.selectedIndex].value;
+		  		update(index, col);
+		  	});
+		  	
+		  	$("#heteroSelect").change(function() {
+		  		het = document.getElementById("heteroSelect").checked;
+		  		const e = document.getElementById("styleSelect");
+		  		style = e.options[e.selectedIndex].value;
+		  		const c = document.getElementById("colSelect");
+		  		col = parseInt(c.options[c.selectedIndex].value);
+		  		update(index, col);
+		  		$("#HetstyleSelect").prop("disabled", !het);
+		  	});
+	
+		  	$("#HetstyleSelect").change(function() {
+		  		const e = document.getElementById("styleSelect");
+		  		style = e.options[e.selectedIndex].value;
+		  		const c = document.getElementById("colSelect");
+		  		col = parseInt(c.options[c.selectedIndex].value);
+		  		const h = document.getElementById("HetstyleSelect");
+		  		hetstyle = h.options[h.selectedIndex].value;
+		  		update(index, col);
+		  	});
+		});
+	}
+	else {
+		body.innerHTML += '<div class="failure"> Input table does not contain columns of type "PDB", "SDF" or "Molfile".</div>';
+	}
+} else {
+    body.innerHTML += '<div class="failure">No data available.</div>';
+}
