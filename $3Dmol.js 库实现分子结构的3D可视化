@@ -13,7 +13,7 @@ const CONFIG = { backgroundColor: 'black' };
 const column_types = ["PDB","SDF","Molfile"];
 const carbonColors = ["lightGreyCarbon", "yellowCarbon", "greenCarbon", "redCarbon", "purpleCarbon"];
 
-
+#初始化变量：代码开始部分声明了一些变量和配置，这些配置会在后续用于控制分子模型的显示方式。
 function update(idx, col){
 	viewer.clear();
 	if (!subscribe){
