@@ -1,0 +1,48 @@
+from rdkit import Chem
+from rdkit.Chem import AllChem
+import pandas as pd
+
+def replace_functional_groups(input_table):
+    if 'SMILES' not in input_table.columns:
+        print("Error: 'SMILES' column is not present in the input table.")
+        return pd.DataFrame(columns=['Original_SMILES', 'New_SMILES'])
+
+    # Define SMARTS patterns for target functional groups and corresponding replacements
+    replacements = [
+    #{'target_smarts': '[OX2H]', 'replacement_smiles': 'C(=O)O'},  # 酚到羧酸
+    #{'target_smarts': '[NX3;H2]', 'replacement_smiles': 'OC'},  # 伯胺到羟基甲基
+    #{'target_smarts': '[NX3;H1]([#6])', 'replacement_smiles': 'OCC'},  # 仲胺到羟基乙基
+    {'target_smarts': '[CX3](=[OX1])O[#6]', 'replacement_smiles': 'C(=O)NC'},  # 酯到酰胺
+    #{'target_smarts': '[SX2]', 'replacement_smiles': 'O'},  # 硫醚到醚
+    #{'target_smarts': '[nX2]', 'replacement_smiles': 'O'},  # 吡啶氮到氧
+    # 在这里添加更多替换规则
+]
+    new_compounds_df = pd.DataFrame(columns=['Original_SMILES', 'New_SMILES'])
+
+    for index, row in input_table.iterrows():
+        original_smiles = row['SMILES']
+        mol = Chem.MolFromSmiles(original_smiles)
+
+        if mol is None:
+            print(f"Failed to create a Mol object from the SMILES string: {original_smiles}")
+            continue
+
+        for replacement in replacements:
+            target = Chem.MolFromSmarts(replacement['target_smarts'])
+            if target is None:
+                print(f"Invalid SMARTS pattern: {replacement['target_smarts']}")
+                continue
+
+            rms = AllChem.ReplaceSubstructs(mol, target, Chem.MolFromSmiles(replacement['replacement_smiles']))
+            if rms:
+                for new_mol in rms:
+                    if new_mol:
+                        new_smiles = Chem.MolToSmiles(new_mol)
+                        new_compounds_df = new_compounds_df.append({'Original_SMILES': original_smiles, 'New_SMILES': new_smiles}, ignore_index=True)
+            else:
+                print(f"Replacement failed for molecule {original_smiles} with target {replacement['target_smarts']}.")
+
+    return new_compounds_df
+
+# Replace 'input_table_1' with the actual input DataFrame variable in KNIME
+output_table_1 = replace_functional_groups(input_table_1)
